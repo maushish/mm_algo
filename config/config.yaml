@@ -1,0 +1,41 @@
+exchange:
+  name: "hyperliquid"
+  network: "testnet"
+  private_key: "${HL_PRIVATE_KEY}"
+  builder_code: "${HL_BUILDER}"
+
+markets:
+  - symbol: "SOL-PERP"
+    enabled: true
+    market_type: "standard"       # standard | hip3 | spot
+    position_sizing_pct: 0.05
+    q_max_usd: 50000
+    max_age_ms: 500
+
+fees:
+  volume_tier: 0                  # 0-6, updated daily
+  staking_tier: "none"            # none|wood|bronze|silver|gold|platinum|diamond
+  builder_fee_bps: 0              # 0 if you registered your own builder code
+  maker_volume_share_pct: 0.0     # current maker volume share on platform
+
+pricing:
+  gamma: 0.1                      # risk aversion (AS model)
+  lambda_skew: 0.5                # inventory skew strength
+  ofi_alpha: 0.05                 # OFI sensitivity
+  ofi_window_ms: 500
+  vol_window_min: 10
+  min_spread_bps: 2.0             # hard floor on spread
+
+risk:
+  max_drawdown_pct: 3.0
+  q_max_usd: 50000
+  latency_warn_ms: 200
+  latency_halt_ms: 1000
+  toxicity_halt_threshold: 0.85
+  consecutive_adverse_limit: 5
+  session_length_hours: 24
+
+monitoring:
+  alert_webhook: "${ALERT_WEBHOOK}"
+  log_level: "INFO"
+  metrics_interval_s: 60

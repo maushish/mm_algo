@@ -1,0 +1,44 @@
+exchange:
+  name: "pacifica"
+  network: "testnet"
+  private_key: "${PACIFICA_PRIVATE_KEY}"
+  builder_code: "${PACIFICA_BUILDER_CODE}"
+  symbol: "BTC"
+
+markets:
+  - symbol: "BTC"
+    enabled: true
+    market_type: "standard"
+    is_rwa_market: false
+    position_sizing_pct: 0.05
+    q_max_usd: 10000
+    max_age_ms: 500
+
+fees:
+  exchange: "pacifica"
+  volume_tier: 0
+  is_rwa_market: false
+  builder_fee_bps: 0              # 0 = using our own registered builder code
+
+pricing:
+  gamma: 0.1
+  lambda_skew: 0.5
+  ofi_alpha: 0.05
+  ofi_window_ms: 500
+  vol_window_min: 10
+  min_spread_bps: 2.0
+
+risk:
+  max_drawdown_pct: 3.0
+  q_max_usd: 10000                # start small on testnet
+  latency_warn_ms: 500
+  latency_halt_ms: 2000
+  toxicity_halt_threshold: 0.85
+  consecutive_adverse_limit: 5
+  position_sizing_pct: 0.05
+  session_length_hours: 24
+
+monitoring:
+  alert_webhook: "${ALERT_WEBHOOK}"
+  log_level: "INFO"
+  metrics_interval_s: 60
