@@ -32,9 +32,9 @@ def make_adapter(**kwargs) -> PacificaAdapter:
 
 
 @pytest.fixture
-def adapter():
+async def adapter():
     a = make_adapter(symbol="BTC")
-    asyncio.get_event_loop().run_until_complete(a.connect())
+    await a.connect()
     return a
 
 
@@ -76,7 +76,8 @@ class TestSigning:
 
 class TestSimulateMode:
 
-    def test_connect_simulate(self, adapter):
+    @pytest.mark.asyncio
+    async def test_connect_simulate(self, adapter):
         assert adapter._connected is True
         assert adapter._simulate is True
 
@@ -150,9 +151,9 @@ class TestRequote:
         await a.place_order("BTC", "sell", 51000.0, 0.1)
         assert len(a._open_orders) == 2
 
-        # Requote
-        result = await a.requote(49500.0, 50500.0, 0.15, 0.15)
-        assert result is True
+        # Requote (now returns tuple)
+        cancel_results, place_results = await a.requote("BTC", 49500.0, 0.15, 50500.0, 0.15)
+        assert len(place_results) == 2
         assert len(a._open_orders) == 2
 
     @pytest.mark.asyncio
@@ -162,7 +163,7 @@ class TestRequote:
         await a.connect()
         with caplog.at_level(logging.ERROR):
             # bid >= ask should be caught
-            await a.requote(100.0, 99.0, 0.1, 0.1)
+            await a.requote("BTC", 100.0, 0.1, 99.0, 0.1)
         assert "Self-trade prevented" in caplog.text
 
 

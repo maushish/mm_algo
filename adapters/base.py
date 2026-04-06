@@ -143,6 +143,21 @@ class ExchangeAdapter(abc.ABC):
         """
 
     @abc.abstractmethod
+    async def requote(
+        self,
+        symbol: str,
+        bid_price: float,
+        bid_size: float,
+        ask_price: float,
+        ask_size: float,
+    ) -> tuple[list[OrderResult], list[OrderResult]]:
+        """
+        Cancel existing quotes and place new ones atomically.
+
+        Returns: (cancel_results, place_results)
+        """
+
+    @abc.abstractmethod
     async def set_self_trade_prevention(self, mode: str) -> bool:
         """
         Enable native self-trade prevention.

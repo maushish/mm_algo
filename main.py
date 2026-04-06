@@ -59,7 +59,7 @@ async def run_bot(config: dict) -> None:
             ofi_alpha=pricing_cfg.get("ofi_alpha", 0.05),
             min_spread_bps=pricing_cfg.get("min_spread_bps", 2.0),
             q_max=config.get("risk", {}).get("q_max_usd", 50_000),
-            available_capital=100_000,  # Updated from balance query
+            available_capital=100_000,  # overwritten after equity fetch below
         ),
         fee_engine=fee_engine,
     )
@@ -77,21 +77,22 @@ async def run_bot(config: dict) -> None:
         private_key=exchange_cfg.get("private_key", ""),
         builder_code=exchange_cfg.get("builder_code", ""),
         network=exchange_cfg.get("network", "testnet"),
-        simulate=True,  # Default to simulate mode
+        simulate=exchange_cfg.get("simulate", True),
     )
 
     await adapter.connect()
     equity = await adapter.get_equity()
     risk_mgr.set_session_equity(equity)
+    quote_engine._cfg.available_capital = equity
 
     # Enable self-trade prevention
     await adapter.set_self_trade_prevention("expire_maker")
 
     # Schedule dead man's switch
-    await adapter.schedule_cancel_all("SOL-PERP", delay_s=30)
+    await adapter.schedule_cancel_all("SOL", delay_s=30)
 
     markets = config.get("markets", [])
-    symbol = markets[0]["symbol"] if markets else "SOL-PERP"
+    symbol = markets[0]["symbol"] if markets else "SOL"
 
     logger.info("Bot starting — symbol=%s, network=%s, simulate=True", symbol, exchange_cfg.get("network"))
     logger.info("\n%s", fee_engine.fee_report())
@@ -128,7 +129,7 @@ async def run_bot(config: dict) -> None:
                 bid_verdict = risk_mgr.check_order(
                     bid_proposal, equity, inventory_q,
                     market_state_action=decision.recommended_action,
-                    funding_rate=decision.sigma,
+                    funding_rate=funding,
                 )
             else:
                 bid_verdict = None

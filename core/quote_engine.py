@@ -213,8 +213,8 @@ class QuoteEngine:
         # Step 7: Apply toxicity multiplier
         half_spread_price *= state.spread_multiplier
 
-        # Step 8: Apply funding skew
-        funding_adj = self._funding_skew(state.funding_rate, mid)
+        # Step 8: Apply funding skew (asymmetric)
+        bid_funding_adj, ask_funding_adj = self._funding_skew(state.funding_rate, mid)
 
         # Step 9: Enforce minimum spread
         min_half_spread = self._cfg.min_spread_bps * mid / 20_000  # min_bps/2 in price
@@ -224,8 +224,8 @@ class QuoteEngine:
         skew = self._cfg.lambda_skew * q_norm * half_spread_price
 
         # Step 11: Final quotes
-        bid = r_adjusted - half_spread_price - skew + funding_adj
-        ask = r_adjusted + half_spread_price + skew + funding_adj
+        bid = r_adjusted - half_spread_price - skew + bid_funding_adj
+        ask = r_adjusted + half_spread_price + skew + ask_funding_adj
 
         spread_bps = (ask - bid) / mid * 10_000
 
@@ -238,8 +238,8 @@ class QuoteEngine:
         # If spread too tight, widen to minimum viable
         if not fee_viable:
             required_half = min_viable * mid / 20_000
-            bid = r_adjusted - required_half - skew + funding_adj
-            ask = r_adjusted + required_half + skew + funding_adj
+            bid = r_adjusted - required_half - skew + bid_funding_adj
+            ask = r_adjusted + required_half + skew + ask_funding_adj
             half_spread_price = required_half
             spread_bps = (ask - bid) / mid * 10_000
             fee_viable = True
@@ -346,23 +346,24 @@ class QuoteEngine:
         self._kappa = max(len(recent) / duration, 0.01)
         return self._kappa
 
-    def _funding_skew(self, funding_rate: float, mid: float) -> float:
+    def _funding_skew(self, funding_rate: float, mid: float) -> tuple[float, float]:
         """
-        Skew quotes based on funding rate.
-        Positive funding (longs pay) → skew asks tighter (encourage shorts).
-        Negative funding (shorts pay) → skew bids tighter.
-        Returns a price offset to apply to both bid and ask.
+        Skew quotes asymmetrically based on funding rate.
+        Positive funding (longs pay) → tighten ask, leave bid alone.
+        Negative funding (shorts pay) → tighten bid, leave ask alone.
+        Returns (bid_adjustment, ask_adjustment) in price units.
         """
         threshold = self._cfg.funding_skew_threshold
         if abs(funding_rate) < threshold:
-            return 0.0
+            return 0.0, 0.0
 
-        # Magnitude of the skew: proportional to funding rate
         magnitude = abs(funding_rate) * mid * 0.5
         if funding_rate > 0:
-            return -magnitude  # lower both quotes (tighter ask)
+            # Longs pay → encourage shorts → tighten ask (lower it)
+            return 0.0, -magnitude * 2
         else:
-            return magnitude   # raise both quotes (tighter bid)
+            # Shorts pay → encourage longs → tighten bid (raise it)
+            return magnitude * 2, 0.0
 
     def _determine_action(
         self,

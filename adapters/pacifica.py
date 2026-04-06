@@ -150,6 +150,9 @@ class PacificaAdapter(ExchangeAdapter):
 
         Returns the complete payload ready to send over WS or REST.
         """
+        if self._keypair is None:
+            raise RuntimeError("No keypair loaded — check PACIFICA_PRIVATE_KEY env var")
+
         timestamp = int(time.time() * 1000)
 
         sign_payload = {
@@ -471,7 +474,7 @@ class PacificaAdapter(ExchangeAdapter):
 
         # Send via WS
         ws_msg = {"id": msg_id, "params": {"create_order": signed}}
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._pending_responses[msg_id] = future
 
         await self._ws.send(json.dumps(ws_msg))
@@ -526,7 +529,7 @@ class PacificaAdapter(ExchangeAdapter):
         signed = self._sign("cancel_order", op_data)
         msg_id = str(uuid.uuid4())
         ws_msg = {"id": msg_id, "params": {"cancel_order": signed}}
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._pending_responses[msg_id] = future
 
         await self._ws.send(json.dumps(ws_msg))
@@ -559,7 +562,7 @@ class PacificaAdapter(ExchangeAdapter):
         signed = self._sign("cancel_all_orders", op_data)
         msg_id = str(uuid.uuid4())
         ws_msg = {"id": msg_id, "params": {"cancel_all_orders": signed}}
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._pending_responses[msg_id] = future
 
         await self._ws.send(json.dumps(ws_msg))
@@ -603,11 +606,12 @@ class PacificaAdapter(ExchangeAdapter):
 
     async def requote(
         self,
+        symbol: str,
         bid_price: float,
-        ask_price: float,
         bid_size: float,
+        ask_price: float,
         ask_size: float,
-    ) -> bool:
+    ) -> tuple[list[OrderResult], list[OrderResult]]:
         """
         Cancel stale quotes + place fresh ones in one batch.
 
@@ -616,6 +620,8 @@ class PacificaAdapter(ExchangeAdapter):
           [Cancel(old_bid), Cancel(old_ask), Create(new_bid), Create(new_ask)]
 
         All ALO orders → no speed bump on the batch.
+
+        Returns: (cancel_results, place_results)
         """
         # Self-trade prevention: bid must be below ask
         if bid_price >= ask_price:
@@ -629,32 +635,36 @@ class PacificaAdapter(ExchangeAdapter):
 
         if self._simulate:
             # Cancel existing
+            cancel_results = []
             to_cancel = list(self._open_orders.keys())
             for oid in to_cancel:
-                await self.cancel_order(self._symbol, oid)
+                cancel_results.append(await self.cancel_order(symbol, oid))
             # Place new
+            place_results = []
             if bid_size > 0:
-                await self.place_order(self._symbol, "buy", bid_price, bid_size)
+                place_results.append(await self.place_order(symbol, "buy", bid_price, bid_size))
             if ask_size > 0:
-                await self.place_order(self._symbol, "sell", ask_price, ask_size)
-            return True
+                place_results.append(await self.place_order(symbol, "sell", ask_price, ask_size))
+            return cancel_results, place_results
 
         # Live: build batch
         start = time.time()
         actions = []
+        cancel_count = 0
 
         # Cancel existing orders
         for oid, order in list(self._open_orders.items()):
-            if order["symbol"] == self._symbol:
-                cancel_data = {"symbol": self._symbol, "client_order_id": oid}
+            if order["symbol"] == symbol:
+                cancel_data = {"symbol": symbol, "client_order_id": oid}
                 signed_cancel = self._sign("cancel_order", cancel_data)
                 actions.append({"type": "Cancel", "data": signed_cancel})
+                cancel_count += 1
 
         # New bid
         if bid_size > 0:
             bid_oid = str(uuid.uuid4())
             bid_data = {
-                "symbol": self._symbol,
+                "symbol": symbol,
                 "price": self._round_price(bid_price, "buy"),
                 "amount": self._round_size(bid_size),
                 "side": "bid",
@@ -671,7 +681,7 @@ class PacificaAdapter(ExchangeAdapter):
         if ask_size > 0:
             ask_oid = str(uuid.uuid4())
             ask_data = {
-                "symbol": self._symbol,
+                "symbol": symbol,
                 "price": self._round_price(ask_price, "sell"),
                 "amount": self._round_size(ask_size),
                 "side": "ask",
@@ -685,14 +695,14 @@ class PacificaAdapter(ExchangeAdapter):
             actions.append({"type": "Create", "data": signed_ask})
 
         if not actions:
-            return True
+            return [], []
 
         msg_id = str(uuid.uuid4())
         ws_msg = {
             "id": msg_id,
             "params": {"batch_orders": {"actions": actions}},
         }
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._pending_responses[msg_id] = future
 
         await self._ws.send(json.dumps(ws_msg))
@@ -702,23 +712,39 @@ class PacificaAdapter(ExchangeAdapter):
             rtt = (time.time() - start) * 1000
             logger.info("Requote batch RTT: %.0fms (%d actions)", rtt, len(actions))
 
+            # Build result lists
+            cancel_results = [
+                OrderResult(success=True, status="cancelled", rtt_ms=rtt)
+                for _ in range(cancel_count)
+            ]
+            place_results = []
+
             # Update internal tracking
             self._open_orders.clear()
             if bid_size > 0:
                 self._open_orders[bid_oid] = {
-                    "symbol": self._symbol, "side": "buy",
+                    "symbol": symbol, "side": "buy",
                     "price": bid_price, "size": bid_size, "placed_at": time.time(),
                 }
+                place_results.append(OrderResult(
+                    success=True, order_id=bid_oid, status="placed", rtt_ms=rtt,
+                ))
             if ask_size > 0:
                 self._open_orders[ask_oid] = {
-                    "symbol": self._symbol, "side": "sell",
+                    "symbol": symbol, "side": "sell",
                     "price": ask_price, "size": ask_size, "placed_at": time.time(),
                 }
-            return True
+                place_results.append(OrderResult(
+                    success=True, order_id=ask_oid, status="placed", rtt_ms=rtt,
+                ))
+            return cancel_results, place_results
 
         except asyncio.TimeoutError:
+            rtt = (time.time() - start) * 1000
             logger.error("Requote batch timed out")
-            return False
+            return [], [OrderResult(
+                success=False, status="timeout", rtt_ms=rtt,
+            )]
         finally:
             self._pending_responses.pop(msg_id, None)
 

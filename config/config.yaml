@@ -5,7 +5,7 @@ exchange:
   builder_code: "${HL_BUILDER}"
 
 markets:
-  - symbol: "SOL-PERP"
+  - symbol: "SOL"
     enabled: true
     market_type: "standard"       # standard | hip3 | spot
     position_sizing_pct: 0.05

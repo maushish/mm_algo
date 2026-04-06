@@ -372,7 +372,7 @@ class HyperliquidAdapter(ExchangeAdapter):
         try:
             meta = self._info.meta_and_asset_ctxs()
             for ctx in meta[1]:
-                if ctx.get("coin") == symbol or True:
+                if ctx.get("coin") == symbol:
                     return float(ctx.get("funding", 0))
             return 0.0
         except Exception as e:

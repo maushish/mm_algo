@@ -219,9 +219,9 @@ class FeeEngine:
         # Builder fee — always additive, not affected by staking or HIP-3
         builder_fee = (self._cfg.builder_fee_bps / 10_000) * notional
 
-        # Maker-share rebate — only for maker side
+        # Maker-share rebate — only for maker side on Hyperliquid
         rebate = 0.0
-        if side == "maker":
+        if side == "maker" and self._cfg.exchange == "hyperliquid":
             rebate_rate = self._get_rebate_rate()
             rebate = rebate_rate * notional  # rebate_rate is negative
 
