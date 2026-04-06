@@ -1,14 +1,18 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "MM_algo"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
+dependencies = ["solders", "base58", "websockets", "aiohttp", "numpy", "pyyaml"]
 
-[tool.setuptools]
-packages = ["MM_algo"]
+[tool.setuptools.package-dir]
+"MM_algo" = "."
+
+[tool.setuptools.packages.find]
+where = ["."]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
